@@ -5,47 +5,49 @@ on:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    env:
+      OWR_BRANCH: openwrt-23.05
+      GL_VERSION: '4.8.0'
+
     steps:
-      # 1) Checkout your overlay repo
-      - name: Checkout repo
+      - name: Checkout your fork
         uses: actions/checkout@v4
 
-      # 2) Clone OpenWrt 23.05 snapshot
-      - name: Clone OpenWrt snapshot
+      - name: Clone OpenWrt ${OWR_BRANCH} snapshot
         run: |
-          git clone --depth 1 \
-            --branch openwrt-23.05 \
+          git clone --depth 1 --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Apply your GL.iNet buildinfo as .config
       - name: Apply GL.iNet buildinfo (.config)
         run: |
-          cp config_4.8.0.buildinfo openwrt-src/.config
+          cp config_${GL_VERSION}.buildinfo openwrt-src/.config
 
-      # 4) Find + copy overlay dirs in one go
+      - name: Bootstrap toolchain & prepare kernel
+        run: |
+          cd openwrt-src
+          make defconfig
+          # install the minimal C toolchain + prepare the kernel tree
+          make -j1 toolchain/install target/linux/prepare
+
       - name: Overlay AmneziaWG packages
         run: |
-          # enable nullglob so pattern with no matches yields empty array
-          shopt -s nullglob
-          dirs=( *amneziawg* )
-          echo "→ matched overlays: ${dirs[*]}"
-          if [ ${#dirs[@]} -eq 0 ]; then
-            echo "❌ No overlay directories matching '*amneziawg*' found." >&2
-            exit 1
-          fi
-          mkdir -p openwrt-src/package
-          cp -rv "${dirs[@]}" openwrt-src/package/
-          echo "→ now under openwrt-src/package/:"
-          ls openwrt-src/package
+          # find your three dirs at repo root
+          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
+          echo "→ overlaying: $PKGS"
+          cp -r $PKGS openwrt-src/package/
 
-      # 5) Verify each overlay folder is in place
-      - name: Verify overlay packages present
+      - name: Prepare feeds
         run: |
-          for pkg in amneziawg-tools kmod-amneziawg luci-proto-amneziawg; do
-            if [ ! -d openwrt-src/package/$pkg ]; then
-              echo "❌ Missing overlay package: $pkg" >&2
-              exit 1
-            fi
+          cd openwrt-src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Verify the three AmneziaWG targets
+        working-directory: openwrt-src
+        run: |
+          for p in amneziawg-tools luci-proto-amneziawg kmod-amneziawg; do
+            echo "Checking target: package/$p"
+            # -n = dry-run, just expand the commands it would run
+            make package/$p/compile -n || exit 1
           done
-          echo "✅ overlay looks good!"
