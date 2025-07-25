@@ -1,0 +1,48 @@
+name: Smoke-test AmneziaWG overlay
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) Checkout your fork (with config_4.8.0.buildinfo + amneziawg-* folders)
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # 2) Clone OpenWrt 23.05 snapshot
+      - name: Clone OpenWrt snapshot
+        run: |
+          git clone --depth 1 \
+            --branch openwrt-23.05 \
+            https://github.com/openwrt/openwrt.git openwrt-src
+
+      # 3) Copy in your .config
+      - name: Apply .config
+        run: |
+          cp config_4.8.0.buildinfo openwrt-src/.config
+
+      # 4) Locate & list your package dirs
+      - name: Find local AmneziaWG packages
+        run: |
+          PKGS=$(find . -maxdepth 1 -type d -name 'amneziawg-*' -o -name 'kmod-amneziawg' | sed 's#^\./##')
+          echo "→ matched: $PKGS"
+          # fail if nothing found
+          [ -n "$PKGS" ]
+
+      # 5) Copy them into openwrt-src/package/
+      - name: Overlay packages
+        run: |
+          mkdir -p openwrt-src/package
+          cp -rv $PKGS openwrt-src/package/
+          echo "→ now in openwrt-src/package:"
+          ls openwrt-src/package
+
+      # 6) Quick sanity: verify each package folder made it across
+      - name: Verify overlay
+        run: |
+          for pkg in amneziawg-tools luci-proto-amneziawg kmod-amneziawg; do
+            test -d openwrt-src/package/$pkg || { echo "❌ missing $pkg"; exit 1; }
+          done
+          echo "✅ overlay looks good!"
