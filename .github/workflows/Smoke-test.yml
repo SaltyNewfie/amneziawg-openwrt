@@ -18,35 +18,33 @@ jobs:
             --branch openwrt-23.05 \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Apply your .config (buildinfo renamed to .config)
-      - name: Apply .config
+      # 3) Apply your GL.iNet buildinfo as .config
+      - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_4.8.0.buildinfo openwrt-src/.config
 
-      # 4) Find any dirs with "amneziawg" in their name
-      - name: Find local AmneziaWG packages
+      # 4) Find + copy overlay dirs in one go
+      - name: Overlay AmneziaWG packages
         run: |
-          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
-          echo "→ matched packages: $PKGS"
-          if [ -z "$PKGS" ]; then
-            echo "❌ No AmneziaWG dirs found at repo root!" >&2
+          # enable nullglob so pattern with no matches yields empty array
+          shopt -s nullglob
+          dirs=( *amneziawg* )
+          echo "→ matched overlays: ${dirs[*]}"
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "❌ No overlay directories matching '*amneziawg*' found." >&2
             exit 1
           fi
-
-      # 5) Copy them into openwrt-src/package/
-      - name: Overlay packages
-        run: |
           mkdir -p openwrt-src/package
-          cp -rv $PKGS openwrt-src/package/
-          echo "→ now under openwrt-src/package:"
+          cp -rv "${dirs[@]}" openwrt-src/package/
+          echo "→ now under openwrt-src/package/:"
           ls openwrt-src/package
 
-      # 6) Verify each overlay folder is present
-      - name: Verify overlay
+      # 5) Verify each overlay folder is in place
+      - name: Verify overlay packages present
         run: |
           for pkg in amneziawg-tools kmod-amneziawg luci-proto-amneziawg; do
             if [ ! -d openwrt-src/package/$pkg ]; then
-              echo "❌ missing openwrt-src/package/$pkg" >&2
+              echo "❌ Missing overlay package: $pkg" >&2
               exit 1
             fi
           done
