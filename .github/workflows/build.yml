@@ -78,4 +78,3 @@ jobs:
           name: "AmneziaWG v${{ env.GL_VERSION }} (AXT1800)"
           tag_name: "${{ github.ref_name }}"
           files: openwrt-src/awg/*.ipk
-```0
