@@ -1,4 +1,4 @@
-name: Build AmneziaWG for ATX1800 Slate
+name: Build AmneziaWG for AXT1800 Slate
 
 on:
   push:
@@ -17,44 +17,45 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout your fork (contains config_4.8.0.buildinfo and the three amneziawg-* dirs)
+      # 1) Checkout your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) Grab the official OpenWrt 23.05 snapshot
+      # 2) Clone the official OpenWrt 23.05 snapshot
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Inject your full .config (the 4.8.0 buildinfo you generated)
+      # 3) Copy in your full .config
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Bootstrap the toolchain (needed before any package compile)
-      - name: Bootstrap OpenWrt toolchain
+      # 4) Bootstrap the toolchain **and prepare the kernel** build dir
+      - name: Bootstrap toolchain & prepare kernel
         run: |
           cd openwrt-src
           make defconfig
-          make -j "$(nproc)" toolchain/install
+          # installs C toolchain _and_ readies the kernel directory so kmods can build
+          make -j"$(nproc)" toolchain/install target/linux/prepare
 
-      # 5) Overlay the three AmneziaWG packages from your repo root
+      # 5) Overlay your three AmneziaWG packages
       - name: Overlay AmneziaWG packages
         run: |
-          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' -printf '%f ')
+          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
           echo "Copying packages: $PKGS"
           cp -r $PKGS openwrt-src/package/
 
-      # 6) Pull in all feeds
+      # 6) Prepare feeds inside the OpenWrt tree
       - name: Prepare feeds
         run: |
           cd openwrt-src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7) Compile only your three packages
+      # 7) Build just your three packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
@@ -62,19 +63,19 @@ jobs:
           make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
           make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
-      # 8) Gather the resulting .ipk files
+      # 8) Gather the resulting .ipks for upload
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          cp bin/packages/aarch64_cortex-a53/base/amneziawg-tools_*.ipk    awg/
+          cp bin/packages/aarch64_cortex-a53/base/amneziawg-tools_*.ipk awg/
           cp bin/packages/aarch64_cortex-a53/base/luci-proto-amneziawg_*.ipk awg/
-          cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk      awg/
+          cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
-      # 9) Publish a GitHub Release with them
+      # 9) Create a GitHub Release with those IPKs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name:    "AmneziaWG v${{ env.GL_VERSION }} (ATX1800)"
+          name: "AmneziaWG v${{ env.GL_VERSION }} (AXT1800)"
           tag_name: "${{ github.ref_name }}"
-          files:   openwrt-src/awg/*.ipk
+          files: openwrt-src/awg/*.ipk
