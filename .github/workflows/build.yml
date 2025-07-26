@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + the three amneziawg-* dirs)
+      # 1) Checkout your fork (with config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -28,17 +28,20 @@ jobs:
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your .config (the 4.8.0 buildinfo)
+      # 3) Copy in your full .config (the 4.8.0 buildinfo)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Bootstrap the toolchain (brings in kernel headers, etc.)
-      - name: Bootstrap OpenWrt toolchain
+      # 4) Bootstrap the toolchain (and set up kernel config)
+      - name: Bootstrap toolchain & kernel
         run: |
           cd openwrt-src
           make defconfig
+          # install the C toolchain
           make -j"$(nproc)" toolchain/install
+          # now compile the kernel so modules have a build‐dir/.config
+          make -j"$(nproc)" target/linux/compile
 
       # 5) Overlay your three AmneziaWG packages into the OpenWrt tree
       - name: Overlay AmneziaWG packages
@@ -72,7 +75,7 @@ jobs:
           cp bin/packages/aarch64_cortex-a53/base/luci-proto-amneziawg_*.ipk awg/
           cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
-      # 9) Push them up in a GitHub Release
+      # 9) Publish a GitHub Release with those IPKs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
