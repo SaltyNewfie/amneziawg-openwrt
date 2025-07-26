@@ -11,40 +11,45 @@ permissions:
 env:
   OWR_BRANCH: openwrt-23.05
   GL_VERSION: '4.8.0'
+  PKG_ARCH: aarch64_cortex-a53
+  KERNEL_TARGET: ipq806x/generic
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
+      # 1) Checkout your fork (with config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 2) Clone the official OpenWrt 23.05 snapshot
+      # 2) Clone the official OpenWrt 23.05 snapshot into openwrt-src/
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your full .config
+      # 3) Copy in your full .config (the GL.iNet buildinfo you generated)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
-          cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
+          cp config_${GL_VERSION}.buildinfo openwrt-src/.config
 
-      # 4) Bootstrap the toolchain **and prepare the kernel** build dir
+      # 4) Bootstrap both toolchain AND kernel-prepare so kmods can build
       - name: Bootstrap toolchain & prepare kernel
         run: |
           cd openwrt-src
+          # generate .config and prepare
           make defconfig
-          # installs C toolchain _and_ readies the kernel directory so kmods can build
+          # install cross-toolchain binaries, then just "prepare" the kernel tree
           make -j"$(nproc)" toolchain/install target/linux/prepare
 
-      # 5) Overlay your three AmneziaWG packages
+      # 5) Overlay the three AmneziaWG packages from your repo root
       - name: Overlay AmneziaWG packages
         run: |
-          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
+          PKGS=$(find . -maxdepth 1 -type d -name 'amneziawg-*' | sed 's#^\./##')
           echo "Copying packages: $PKGS"
           cp -r $PKGS openwrt-src/package/
 
@@ -68,11 +73,11 @@ jobs:
         run: |
           cd openwrt-src
           mkdir -p awg
-          cp bin/packages/aarch64_cortex-a53/base/amneziawg-tools_*.ipk awg/
-          cp bin/packages/aarch64_cortex-a53/base/luci-proto-amneziawg_*.ipk awg/
-          cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
+          cp bin/packages/${PKG_ARCH}/base/amneziawg-tools_*.ipk awg/
+          cp bin/packages/${PKG_ARCH}/base/luci-proto-amneziawg_*.ipk awg/
+          cp bin/targets/${KERNEL_TARGET}/packages/kmod-amneziawg_*.ipk awg/
 
-      # 9) Create a GitHub Release with those IPKs
+      # 9) Create a GitHub release with those IPKs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
