@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
+      # 1) Checkout your fork (has config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -28,12 +28,12 @@ jobs:
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your full .config (the 4.8.0 buildinfo you generated)
+      # 3) Copy in your full .config (4.8.0 buildinfo)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Bootstrap OpenWrt toolchain (needed before any package compile)
+      # 4) Bootstrap toolchain (needed before any package compile)
       - name: Bootstrap OpenWrt toolchain
         run: |
           cd openwrt-src
@@ -54,15 +54,15 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7) **Enable** your three packages in .config and re-defconfig
+      # 7) Enable your three packages by appending to .config + regenerate
       - name: Enable AmneziaWG packages in .config
         run: |
           cd openwrt-src
-          # turn on the packages you overlaid
-          scripts/config --enable PACKAGE_amneziawg-tools
-          scripts/config --enable PACKAGE_luci-proto-amneziawg
-          scripts/config --enable PACKAGE_kmod-amneziawg
-          # regenerate the .config so that the compile targets appear
+          cat <<'EOF' >> .config
+CONFIG_PACKAGE_amneziawg-tools=y
+CONFIG_PACKAGE_luci-proto-amneziawg=y
+CONFIG_PACKAGE_kmod-amneziawg=y
+EOF
           make defconfig
 
       # 8) Build just your three packages
@@ -82,7 +82,7 @@ jobs:
           cp bin/packages/aarch64_cortex-a53/base/luci-proto-amneziawg_*.ipk awg/
           cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
-      # 10) Publish a GitHub Release with the three IPKs
+      # 10) Create a GitHub Release with those IPKs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
