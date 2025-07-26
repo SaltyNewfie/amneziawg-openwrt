@@ -10,65 +10,66 @@ permissions:
 
 env:
   SDK_REPO: https://github.com/gl-inet/sdk.git
-  SDK_TARGET: ipq_ipq60xx-qsdk11     # the AXT1800 “ipq_ipq60xx” target in GL.iNet’s naming
-  GL_VERSION: '4.8.0'                # for naming your release
+  SDK_TARGET: ipq_ipq60xx-qsdk11    # AXT1800 target in GL.iNet’s SDK naming
+  GL_VERSION: '4.8.0'               # for your config_4.8.0.buildinfo
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1️⃣ Checkout **your** fork, with overlay + config_4.8.0.buildinfo
+      # 1️⃣ get your fork (with amneziawg-tools, luci-proto-amneziawg,
+      #    kmod-amneziawg and config_4.8.0.buildinfo all in the repo root)
       - name: Checkout overlay
         uses: actions/checkout@v4
 
-      # 2️⃣ Grab the GL.iNet SDK
+      # 2️⃣ clone the gl-inet/sdk repo
       - name: Clone GL.iNet SDK repo
         run: |
-          git clone --depth 1 "${{ env.SDK_REPO }}" glinet-sdk
+          git clone --depth 1 "${SDK_REPO}" glinet-sdk
 
-      # 3️⃣ Download the prebuilt SDK for AXT1800
+      # 3️⃣ download the prebuilt SDK for AXT1800
       - name: Download AXT1800 SDK
         run: |
           cd glinet-sdk
           chmod +x download.sh
-          ./download.sh "${{ env.SDK_TARGET }}"
+          ./download.sh "${SDK_TARGET}"
 
-      # 4️⃣ Copy your three AmneziaWG dirs into the SDK
+      # 4️⃣ overlay your three AmneziaWG packages into the downloaded SDK
       - name: Overlay AmneziaWG packages
         run: |
-          cd glinet-sdk/sdk/${{ env.SDK_TARGET }}
-          # create the package folder if it doesn’t already exist
-          mkdir -p package
-          cp -r $GITHUB_WORKSPACE/amneziawg-tools     package/
+          cd glinet-sdk/"${SDK_TARGET}"
+          mkdir -p package feeds/luci
+          cp -r $GITHUB_WORKSPACE/amneziawg-tools      package/
+          cp -r $GITHUB_WORKSPACE/kmod-amneziawg       package/
           cp -r $GITHUB_WORKSPACE/luci-proto-amneziawg feeds/luci/
-          cp -r $GITHUB_WORKSPACE/kmod-amneziawg     package/
 
-      # 5️⃣ Copy in your full .config (the GL.iNet buildinfo you generated)
+      # 5️⃣ inject your full .config (the GL.iNet buildinfo you generated)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
-          cd glinet-sdk/sdk/${{ env.SDK_TARGET }}
-          cp $GITHUB_WORKSPACE/config_${{ env.GL_VERSION }}.buildinfo .config
+          cd glinet-sdk/"${SDK_TARGET}"
+          cp $GITHUB_WORKSPACE/config_${GL_VERSION}.buildinfo .config
 
-      # 6️⃣ Build **only** your three packages via the SDK’s builder.sh
+      # 6️⃣ build only your three packages via the SDK’s builder.sh
       - name: Build AmneziaWG packages
         run: |
-          cd glinet-sdk/sdk/${{ env.SDK_TARGET }}
-          ./builder.sh amneziawg-tools luci-proto-amneziawg kmod-amneziawg
+          cd glinet-sdk/"${SDK_TARGET}"
+          chmod +x ../builder.sh
+          ../builder.sh amneziawg-tools luci-proto-amneziawg kmod-amneziawg
 
-      # 7️⃣ Gather .ipks into one folder
+      # 7️⃣ gather the resulting .ipks
       - name: Collect artifacts
         run: |
-          cd glinet-sdk/sdk/${{ env.SDK_TARGET }}/bin/openwrt-sdk
+          cd glinet-sdk/"${SDK_TARGET}"/bin/openwrt-sdk
           mkdir -p awg
           cp bin/*/*/amneziawg-tools_*.ipk awg/
           cp bin/*/*/luci-proto-amneziawg_*.ipk awg/
           cp bin/*/*/kmod-amneziawg_*.ipk awg/
 
-      # 8️⃣ Publish a GitHub release with those IPKs
+      # 8️⃣ publish them in a GitHub release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: "${{ github.ref_name }}"
           name: "AmneziaWG v${{ env.GL_VERSION }} (AXT1800)"
-          files: glinet-sdk/sdk/${{ env.SDK_TARGET }}/bin/openwrt-sdk/awg/*
+          files: glinet-sdk/"${{ env.SDK_TARGET }}"/bin/openwrt-sdk/awg/*.ipk
