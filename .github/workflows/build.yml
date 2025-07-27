@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + amneziawg-* dirs)
+      # 1) Checkout *your* fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) Clone official OpenWrt 23.05 into openwrt-src/
+      # 2) Clone official OpenWrt 23.05 snapshot
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
@@ -40,7 +40,7 @@ jobs:
           make defconfig
           make -j"$(nproc)" toolchain/install
 
-      # 5) Overlay your three AmneziaWG packages
+      # 5) Overlay your AmneziaWG packages
       - name: Overlay AmneziaWG packages
         run: |
           PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
@@ -54,7 +54,13 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7) Compile just your three packages
+      # 7) **Compile the kernel** so any kmod can build
+      - name: Compile kernel & core
+        run: |
+          cd openwrt-src
+          make -j"$(nproc)" target/linux/compile V=s
+
+      # 8) Now build just your three packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
@@ -62,18 +68,18 @@ jobs:
           make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
           make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
-      # 8) Gather the resulting .ipk files from the correct IPQ806x paths
+      # 9) Gather the resulting .ipk files
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          # tools + luci (arch-independent feed under arm_cortex-a15+neon-vfpv4)
+          # tools + luci (base feed)
           cp bin/packages/arm_cortex-a15+neon-vfpv4_musl_eabi/base/amneziawg-tools_*.ipk awg/
           cp bin/packages/arm_cortex-a15+neon-vfpv4_musl_eabi/base/luci-proto-amneziawg_*.ipk awg/
           # kernel module (IPQ806x target)
           cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
-      # 9) Publish a GitHub Release with your IPKs
+      # 10) Create a GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
