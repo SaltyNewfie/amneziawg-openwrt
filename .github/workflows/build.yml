@@ -2,7 +2,7 @@ name: Build AmneziaWG for AXT1800 Slate
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -10,65 +10,79 @@ permissions:
 
 env:
   OWR_BRANCH: openwrt-23.05
-  GL_VERSION: "4.8.0"
+  GL_VERSION: '4.8.0'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Check out your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
-      - name: Checkout repository
+      # 0) Install host deps so toolchain/libs build properly
+      - name: Install build-host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git-core libncurses5-dev python3-distutils
+
+      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + three amneziawg-* dirs)
+      - name: Checkout overlay
         uses: actions/checkout@v4
 
-      # 2) Grab OpenWrt 23.05 snapshot
+      # 2) Clone the official OpenWrt 23.05 snapshot
       - name: Clone OpenWrt snapshot
         run: |
-          git clone \
-            --depth 1 \
+          git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
-            https://github.com/openwrt/openwrt.git \
-            openwrt-src
+            https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Drop in your full 533-line .config
-      - name: Apply GL.iNet buildinfo as .config
+      # 3) Copy in your full .config
+      - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Overlay only your three AmneziaWG packages
-      - name: Overlay AmneziaWG packages
+      # 4) Enable YOUR three packages + gpio-button-hotplug (kernel helper)
+      - name: Enable AmneziaWG + helper in .config
         run: |
-          for pkg in amneziawg-tools luci-proto-amneziawg kmod-amneziawg; do
-            echo "Copying $pkg → openwrt-src/package/"
-            cp -r "$pkg" openwrt-src/package/
-          done
+          cat <<'EOF' >> openwrt-src/.config
+          CONFIG_PACKAGE_amneziawg-tools=y
+          CONFIG_PACKAGE_luci-proto-amneziawg=y
+          CONFIG_PACKAGE_kmod-amneziawg=y
+          CONFIG_PACKAGE_gpio-button-hotplug=y
+          EOF
+          cd openwrt-src
+          make defconfig
 
-      # 5) Update & install feeds
-      - name: Prepare feeds
+      # 5) Bootstrap the toolchain *and* run `make prepare`
+      - name: Bootstrap toolchain & prepare
         run: |
           cd openwrt-src
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          make -j"$(nproc)" toolchain/install
+          make -j"$(nproc)" prepare
 
-      # 6) Build just your three packages (this will implicitly build the minimal toolchain)
+      # 6) Overlay your three packages into the tree
+      - name: Overlay AmneziaWG packages
+        run: |
+          cp -r amneziawg-tools kmod-amneziawg luci-proto-amneziawg \
+             openwrt-src/package/
+
+      # 7) Build JUST your three packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
-          make \
-            package/amneziawg-tools/{clean,compile} \
-            package/luci-proto-amneziawg/{clean,compile} \
-            package/kmod-amneziawg/{clean,compile} \
-            V=s \
-            -j"$(nproc)"
+          make package/amneziawg-tools/compile V=s -j"$(nproc)"
+          make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
+          make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
-      # 7) Gather the resulting .ipk artifacts
+      # 8) Gather your .ipks
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          find bin/packages -type f -name 'amneziawg-*' -exec cp {} awg/ \;
+          cp bin/packages/aarch64_cortex-a53/base/amneziawg-tools_*.ipk awg/
+          cp bin/packages/aarch64_cortex-a53/base/luci-proto-amneziawg_*.ipk awg/
+          cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
-      # 8) Push them up as a GitHub Release
+      # 9) Publish as a Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
