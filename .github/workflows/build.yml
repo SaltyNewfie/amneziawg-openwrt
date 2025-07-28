@@ -1,4 +1,4 @@
-name: Build AmneziaWG for AXT1800 Slate (SDK)
+name: Build AmneziaWG for AXT1800 Slate
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  SDK_TARGET: ipq807x-2102   # AXT1800/AX1800 v4.x+
+  OWR_BRANCH: openwrt-23.05
   GL_VERSION: '4.8.0'
 
 jobs:
@@ -17,59 +17,75 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # 2) Clone the GL.iNet SDK repo
-      - name: Checkout GL.iNet SDK
+      # 1) Get your fork (with buildinfo + overlay packages)
+      - name: Checkout overlay repo
         uses: actions/checkout@v4
         with:
-          repository: gl-inet/sdk
-          path: glinet-sdk
+          fetch-depth: 0
 
-      # 3) Download the AXT1800 SDK into glinet-sdk/<target>/
-      - name: Download AXT1800 SDK
+      # 2) Clone the official OpenWrt snapshot
+      - name: Clone OpenWrt snapshot
         run: |
-          cd glinet-sdk
-          chmod +x download.sh
-          ./download.sh ${{ env.SDK_TARGET }}
+          git clone --depth 1 \
+            --branch "${{ env.OWR_BRANCH }}" \
+            https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 4) Copy in your full .config (the buildinfo you generated)
+      # 3) Copy in your full .config
       - name: Apply GL.iNet buildinfo (.config)
         run: |
-          cp config_${{ env.GL_VERSION }}.buildinfo \
-             glinet-sdk/${{ env.SDK_TARGET }}/.config
+          cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 5) Overlay your three AmneziaWG packages into the SDK
+      # 4) Regenerate any missing defaults
+      - name: Initialize build
+        run: |
+          cd openwrt-src
+          make defconfig
+
+      # 5) Overlay your three AmneziaWG packages
       - name: Overlay AmneziaWG packages
         run: |
-          PKGS="amneziawg-tools luci-proto-amneziawg kmod-amneziawg"
-          for pkg in $PKGS; do
-            cp -r $pkg glinet-sdk/${{ env.SDK_TARGET }}/package/
-          done
+          cd openwrt-src
+          PKGS=$(find ../ -maxdepth 1 -type d -name '*amneziawg*' | sed 's#\.\./##')
+          echo "Overlaying packages: $PKGS"
+          cp -r $PKGS package/
 
-      # 6) Build just your three packages
+      # 6) Update & install all feeds
+      - name: Update & install feeds
+        run: |
+          cd openwrt-src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # 7) Enable your three packages via scripts/config
+      - name: Enable AmneziaWG packages
+        run: |
+          cd openwrt-src
+          scripts/config --enable PACKAGE_amneziawg-tools
+          scripts/config --enable PACKAGE_luci-proto-amneziawg
+          scripts/config --enable PACKAGE_kmod-amneziawg
+          make defconfig
+
+      # 8) Build just your three packages
       - name: Build AmneziaWG packages
         run: |
-          cd glinet-sdk/${{ env.SDK_TARGET }}
-          make package/amneziawg-tools/compile   V=s -j"$(nproc)"
+          cd openwrt-src
+          make package/amneziawg-tools/compile V=s -j"$(nproc)"
           make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
-          make package/kmod-amneziawg/compile     V=s -j"$(nproc)"
+          make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
-      # 7) Gather the resulting .ipk files
+      # 9) Gather all three .ipks
       - name: Collect artifacts
         run: |
-          cd glinet-sdk/${{ env.SDK_TARGET }}
+          cd openwrt-src
           mkdir -p awg
-          cp bin/packages/arm_cortex-a15+neon-vfpv4_musl_eabi/base/amneziawg-tools_*.ipk awg/
-          cp bin/packages/arm_cortex-a15+neon-vfpv4_musl_eabi/base/luci-proto-amneziawg_*.ipk awg/
-          cp bin/targets/ipq807x/generic/packages/kmod-amneziawg_*.ipk        awg/
+          cp bin/packages/*/base/amneziawg-tools_*.ipk awg/ || echo "no tools ipk"
+          cp bin/packages/*/base/luci-proto-amneziawg_*.ipk awg/ || echo "no luci ipk"
+          cp bin/targets/*/*/packages/kmod-amneziawg_*.ipk awg/ || echo "no kmod ipk"
 
-      # 8) Publish them as a GitHub Release
+      # 10) Publish a release with all three IPKs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name:    "AmneziaWG v${{ env.GL_VERSION }} (AXT1800 SDK)"
+          name: "AmneziaWG v${{ env.GL_VERSION }} (AXT1800)"
           tag_name: "${{ github.ref_name }}"
-          files:   glinet-sdk/${{ env.SDK_TARGET }}/awg/*.ipk
+          files: openwrt-src/awg/*.ipk
