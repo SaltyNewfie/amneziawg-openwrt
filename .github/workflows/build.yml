@@ -17,46 +17,47 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Get your fork (with buildinfo + overlay packages)
+      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + amneziawg-tools, kmod-amneziawg, luci-proto-amneziawg in the root)
       - name: Checkout overlay repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      # 2) Clone the official OpenWrt snapshot
+      # 2) Clone the official OpenWrt 23.05 snapshot
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
             --branch "${{ env.OWR_BRANCH }}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your full .config
+      # 3) Copy in your full .config (4.8.0 buildinfo)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Regenerate any missing defaults
+      # 4) Regenerate defaults
       - name: Initialize build
         run: |
           cd openwrt-src
           make defconfig
 
-      # 5) Overlay your three AmneziaWG packages
+      # 5) Overlay exactly your three packages
       - name: Overlay AmneziaWG packages
         run: |
           cd openwrt-src
-          PKGS=$(find ../ -maxdepth 1 -type d -name '*amneziawg*' | sed 's#\.\./##')
-          echo "Overlaying packages: $PKGS"
-          cp -r $PKGS package/
+          echo "Copying amneziawg-tools, luci-proto-amneziawg, kmod-amneziawg into package/"
+          cp -r ../amneziawg-tools  package/
+          cp -r ../luci-proto-amneziawg package/
+          cp -r ../kmod-amneziawg        package/
 
-      # 6) Update & install all feeds
+      # 6) Update & install feeds
       - name: Update & install feeds
         run: |
           cd openwrt-src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7) Enable your three packages via scripts/config
+      # 7) Enable your packages (keeps .config in sync)
       - name: Enable AmneziaWG packages
         run: |
           cd openwrt-src
@@ -65,7 +66,7 @@ jobs:
           scripts/config --enable PACKAGE_kmod-amneziawg
           make defconfig
 
-      # 8) Build just your three packages
+      # 8) Compile just your three packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
@@ -73,16 +74,16 @@ jobs:
           make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
           make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
-      # 9) Gather all three .ipks
+      # 9) Gather all three .ipk files (tools, luci, kmod)
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          cp bin/packages/*/base/amneziawg-tools_*.ipk awg/ || echo "no tools ipk"
-          cp bin/packages/*/base/luci-proto-amneziawg_*.ipk awg/ || echo "no luci ipk"
-          cp bin/targets/*/*/packages/kmod-amneziawg_*.ipk awg/ || echo "no kmod ipk"
+          cp bin/packages/*/base/amneziawg-tools_*.ipk awg/ 2>/dev/null || echo "no tools ipk"
+          cp bin/packages/*/base/luci-proto-amneziawg_*.ipk awg/ 2>/dev/null || echo "no luci ipk"
+          cp bin/targets/*/*/packages/kmod-amneziawg_*.ipk awg/ 2>/dev/null || echo "no kmod ipk"
 
-      # 10) Publish a release with all three IPKs
+      # 10) Publish those three IPKs on a GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
