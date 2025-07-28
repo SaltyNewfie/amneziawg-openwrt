@@ -64,9 +64,9 @@ jobs:
         run: |
           cd openwrt-src
           mkdir -p awg
-          cp bin/packages/*/packages/all/amneziawg-tools_*.ipk awg/
-          cp bin/packages/*/packages/all/luci-proto-amneziawg_*.ipk awg/
-          cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
+          find bin -type f -name 'amneziawg-tools_*.ipk'   -exec cp {} awg/ \;
+          find bin -type f -name 'luci-proto-amneziawg_*.ipk' -exec cp {} awg/ \;
+          find bin -type f -name 'kmod-amneziawg_*.ipk'      -exec cp {} awg/ \;
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
