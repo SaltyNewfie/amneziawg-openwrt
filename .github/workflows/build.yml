@@ -17,42 +17,44 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + amneziawg-* dirs)
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2) Clone the official OpenWrt 23.05 snapshot into openwrt-src/
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
+      # 3) Copy in your full .config (the buildinfo you generated for 4.8.0)
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
+      # 4) Bootstrap OpenWrt toolchain (needed for compiling any package)
       - name: Bootstrap OpenWrt toolchain
         run: |
           cd openwrt-src
           make defconfig
           make -j"$(nproc)" toolchain/install
 
+      # 5) Overlay the three AmneziaWG packages from your repo root
       - name: Overlay AmneziaWG packages
         run: |
           PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
-          echo "Copying overlay packages: $PKGS"
+          echo "Copying packages: $PKGS"
           cp -r $PKGS openwrt-src/package/
 
+      # 6) Prepare feeds inside the OpenWrt tree
       - name: Prepare feeds
         run: |
           cd openwrt-src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Compile kernel & core
-        run: |
-          cd openwrt-src
-          make -j"$(nproc)" target/linux/compile V=s
-
+      # 7) Build just your three packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
@@ -60,14 +62,17 @@ jobs:
           make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
           make package/kmod-amneziawg/compile V=s -j"$(nproc)"
 
+      # 8) Gather whatever IPKs mention “amneziawg” (tools, luci-proto, kmod, etc.)
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          find bin -type f -name 'amneziawg-tools_*.ipk'   -exec cp {} awg/ \;
-          find bin -type f -name 'luci-proto-amneziawg_*.ipk' -exec cp {} awg/ \;
-          find bin -type f -name 'kmod-amneziawg_*.ipk'      -exec cp {} awg/ \;
+          echo "Looking for all amneziawg IPKs…"
+          find bin -type f -iname '*amneziawg*.ipk' -print
+          echo "Copying them into awg/…"
+          find bin -type f -iname '*amneziawg*.ipk' -exec cp {} awg/ \;
 
+      # 9) Create a GitHub release with all of them
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
