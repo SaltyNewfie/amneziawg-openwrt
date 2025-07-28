@@ -64,10 +64,8 @@ jobs:
         run: |
           cd openwrt-src
           mkdir -p awg
-          # tools & luci-proto are arch=all
-          cp bin/packages/aarch64_cortex-a53/packages/all/amneziawg-tools_*.ipk awg/
-          cp bin/packages/aarch64_cortex-a53/packages/all/luci-proto-amneziawg_*.ipk awg/
-          # kmod lands under ipq806x
+          cp bin/packages/*/packages/all/amneziawg-tools_*.ipk awg/
+          cp bin/packages/*/packages/all/luci-proto-amneziawg_*.ipk awg/
           cp bin/targets/ipq806x/generic/packages/kmod-amneziawg_*.ipk awg/
 
       - name: Create GitHub Release
