@@ -2,7 +2,8 @@ name: Build AmneziaWG for AXT1800 Slate
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -17,73 +18,70 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1) Checkout *your* fork (with config_4.8.0.buildinfo + amneziawg-tools, kmod-amneziawg, luci-proto-amneziawg in the root)
-      - name: Checkout overlay repo
+      # 1) Checkout your fork (contains config_4.8.0.buildinfo + amneziawg-* dirs)
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      # 2) Clone the official OpenWrt 23.05 snapshot
+      # 2) Clone official OpenWrt 23.05 into openwrt-src/
       - name: Clone OpenWrt snapshot
         run: |
           git clone --depth 1 \
-            --branch "${{ env.OWR_BRANCH }}" \
+            --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your full .config (4.8.0 buildinfo)
+      # 3) Copy in your full .config
       - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Regenerate defaults
-      - name: Initialize build
+      # 4) Bootstrap the OpenWrt C toolchain
+      - name: Bootstrap OpenWrt toolchain
         run: |
           cd openwrt-src
           make defconfig
+          make -j"$(nproc)" toolchain/install
 
-      # 5) Overlay exactly your three packages
+      # 5) Overlay your three AmneziaWG packages
       - name: Overlay AmneziaWG packages
         run: |
-          cd openwrt-src
-          echo "Copying amneziawg-tools, luci-proto-amneziawg, kmod-amneziawg into package/"
-          cp -r ../amneziawg-tools  package/
-          cp -r ../luci-proto-amneziawg package/
-          cp -r ../kmod-amneziawg        package/
+          PKGS=$(find . -maxdepth 1 -type d -name 'amneziawg-*' | sed 's#^\./##')
+          echo "Copying packages: $PKGS"
+          cp -r $PKGS openwrt-src/package/
 
-      # 6) Update & install feeds
-      - name: Update & install feeds
+      # 6) Prepare feeds inside OpenWrt tree
+      - name: Prepare feeds
         run: |
           cd openwrt-src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7) Enable your packages (keeps .config in sync)
+      # 7) Enable your three packages by appending to .config (avoids the scripts/config directory issue)
       - name: Enable AmneziaWG packages
         run: |
           cd openwrt-src
-          scripts/config --enable PACKAGE_amneziawg-tools
-          scripts/config --enable PACKAGE_luci-proto-amneziawg
-          scripts/config --enable PACKAGE_kmod-amneziawg
+          cat << 'EOF' >> .config
+CONFIG_PACKAGE_amneziawg-tools=y
+CONFIG_PACKAGE_luci-proto-amneziawg=y
+CONFIG_PACKAGE_kmod-amneziawg=y
+EOF
           make defconfig
 
-      # 8) Compile just your three packages
+      # 8) Build just your packages
       - name: Build AmneziaWG packages
         run: |
           cd openwrt-src
-          make package/amneziawg-tools/compile V=s -j"$(nproc)"
-          make package/luci-proto-amneziawg/compile V=s -j"$(nproc)"
-          make package/kmod-amneziawg/compile V=s -j"$(nproc)"
+          make -j"$(nproc)" package/amneziawg-tools/compile V=s
+          make -j"$(nproc)" package/luci-proto-amneziawg/compile V=s
+          make -j"$(nproc)" package/kmod-amneziawg/compile V=s
 
-      # 9) Gather all three .ipk files (tools, luci, kmod)
+      # 9) Collect every AmneziaWG .ipk (tools, luci, kmod)
       - name: Collect artifacts
         run: |
           cd openwrt-src
           mkdir -p awg
-          cp bin/packages/*/base/amneziawg-tools_*.ipk awg/ 2>/dev/null || echo "no tools ipk"
-          cp bin/packages/*/base/luci-proto-amneziawg_*.ipk awg/ 2>/dev/null || echo "no luci ipk"
-          cp bin/targets/*/*/packages/kmod-amneziawg_*.ipk awg/ 2>/dev/null || echo "no kmod ipk"
+          find bin -type f -name 'amneziawg-*.ipk' -exec cp {} awg/ \;
 
-      # 10) Publish those three IPKs on a GitHub Release
+      # 10) Push them up in a GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
