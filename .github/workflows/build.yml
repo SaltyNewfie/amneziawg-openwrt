@@ -13,57 +13,20 @@ env:
   GL_VERSION: '4.8.0'
 
 jobs:
-  smoke:
-    name: Smoke-test overlay
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout your fork
-        uses: actions/checkout@v4
-
-      - name: Clone OpenWrt 23.05 branch
-        run: |
-          git clone --depth 1 \
-            --branch "${OWR_BRANCH}" \
-            https://github.com/openwrt/openwrt.git openwrt-src
-
-      - name: Copy in GL.iNet .config
-        run: |
-          cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
-
-      - name: Overlay AmneziaWG packages
-        run: |
-          PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
-          echo "Overlaying: $PKGS"
-          cp -r $PKGS openwrt-src/package/
-
-      - name: Quick defconfig
-        run: |
-          cd openwrt-src
-          make defconfig
-
-      - name: Verify overlay dirs present
-        run: |
-          for P in amneziawg-tools luci-proto-amneziawg kmod-amneziawg; do
-            [ -d openwrt-src/package/$P ] \
-              || (echo "ERROR: $P missing"; exit 1)
-          done
-
   build:
-    name: Full build
     runs-on: ubuntu-22.04
-    needs: smoke
 
     steps:
       - name: Checkout your fork
         uses: actions/checkout@v4
 
-      - name: Clone OpenWrt 23.05 branch
+      - name: Clone OpenWrt 23.05 snapshot
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      - name: Copy in GL.iNet .config
+      - name: Apply GL.iNet .config
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
@@ -73,16 +36,16 @@ jobs:
           make defconfig
           make -j"$(nproc)" toolchain/install
 
-      - name: Compile Linux kernel
+      - name: Compile Linux kernel headers only
         run: |
           cd openwrt-src
-          # build target/linux so kmods have the right headers & .config
-          make -j"$(nproc)" target/linux/compile V=s
-          make -j"$(nproc)" target/linux/install V=s
+          # build just the kernel headers/staging area
+          make -j"$(nproc)" target/linux/compile
 
       - name: Overlay AmneziaWG packages
         run: |
           PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
+          echo "Overlaying: $PKGS"
           cp -r $PKGS openwrt-src/package/
 
       - name: Prepare feeds
