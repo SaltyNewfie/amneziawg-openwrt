@@ -17,47 +17,41 @@ jobs:
     name: Smoke-test overlay
     runs-on: ubuntu-22.04
     steps:
-      # 1) Checkout your fork (overlay lives here)
       - name: Checkout your fork
         uses: actions/checkout@v4
 
-      # 2) Grab a clean OpenWrt 23.05 tree
       - name: Clone OpenWrt 23.05 branch
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
             https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 3) Copy in your GL.iNet .config
       - name: Copy in GL.iNet .config
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
-      # 4) Overlay your three packages
       - name: Overlay AmneziaWG packages
         run: |
           PKGS=$(find . -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\./##')
-          echo "Found overlay dirs: $PKGS"
+          echo "Overlaying: $PKGS"
           cp -r $PKGS openwrt-src/package/
 
-      # 5) Quick defconfig to validate the tree structure
-      - name: Defconfig (quick)
+      - name: Quick defconfig
         run: |
           cd openwrt-src
           make defconfig
 
-      # 6) Verify those three overlay dirs actually exist
-      - name: Verify overlay packages exist
+      - name: Verify overlay dirs present
         run: |
           for P in amneziawg-tools luci-proto-amneziawg kmod-amneziawg; do
             [ -d openwrt-src/package/$P ] \
-              || (echo "ERROR: $P missing from openwrt-src/package/"; exit 1)
+              || (echo "ERROR: $P missing"; exit 1)
           done
 
   build:
     name: Full build
-    needs: smoke
     runs-on: ubuntu-22.04
+    needs: smoke
 
     steps:
       - name: Checkout your fork
@@ -78,6 +72,13 @@ jobs:
           cd openwrt-src
           make defconfig
           make -j"$(nproc)" toolchain/install
+
+      - name: Compile Linux kernel
+        run: |
+          cd openwrt-src
+          # build target/linux so kmods have the right headers & .config
+          make -j"$(nproc)" target/linux/compile V=s
+          make -j"$(nproc)" target/linux/install V=s
 
       - name: Overlay AmneziaWG packages
         run: |
