@@ -2,8 +2,7 @@ name: Build AmneziaWG for AXT1800 Slate
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -15,14 +14,14 @@ env:
 
 jobs:
   smoke-test:
-    name: Smoke-test overlay
+    name: Smoke‐test overlay
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout your fork
         uses: actions/checkout@v4
 
-      - name: Clone OpenWrt ${OWR_BRANCH} snapshot
+      - name: Clone OpenWrt ${OWR_BRANCH}
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
@@ -31,10 +30,8 @@ jobs:
       - name: Overlay AmneziaWG packages
         run: |
           cd openwrt-src
-          echo "Root contains:" && ls -1 ../*amneziawg* || true
-          echo "Copying overlay into openwrt-src/package…" 
           for pkg in ../*amneziawg*; do
-            [ -d "$pkg" ] && cp -R "$pkg" package/ && echo "  → $pkg"
+            [ -d "$pkg" ] && cp -R "$pkg" package/
           done
 
       - name: Verify overlay landed
@@ -43,7 +40,7 @@ jobs:
           ls -1 | grep -E '^amneziawg-tools$|^luci-proto-amneziawg$|^kmod-amneziawg$'
 
   build:
-    name: Full build & Release
+    name: Full build & release
     needs: smoke-test
     runs-on: ubuntu-22.04
 
@@ -51,7 +48,7 @@ jobs:
       - name: Checkout your fork
         uses: actions/checkout@v4
 
-      - name: Clone OpenWrt ${OWR_BRANCH} snapshot
+      - name: Clone OpenWrt ${OWR_BRANCH}
         run: |
           git clone --depth 1 \
             --branch "${OWR_BRANCH}" \
@@ -66,6 +63,11 @@ jobs:
           cd openwrt-src
           make defconfig
           make -j"$(nproc)" toolchain/install
+
+      - name: Prepare Linux kernel headers only
+        run: |
+          cd openwrt-src
+          make target/linux/prepare
 
       - name: Overlay AmneziaWG packages
         run: |
