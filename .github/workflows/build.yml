@@ -32,10 +32,11 @@ jobs:
 
       - name: Overlay AmneziaWG packages
         run: |
-          cd openwrt-src
-          PKGS=$(find .. -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\.\./##')
-          echo "Copying packages: $PKGS"
-          cp -r $PKGS package/
+          # copy each package from your repo root into OpenWrt's package folder
+          mkdir -p openwrt-src/package
+          cp -r amneziawg-tools openwrt-src/package/
+          cp -r luci-proto-amneziawg openwrt-src/package/
+          cp -r kmod-amneziawg openwrt-src/package/
 
       - name: Quick defconfig for smoke
         run: |
@@ -75,9 +76,10 @@ jobs:
 
       - name: Overlay AmneziaWG packages
         run: |
-          cd openwrt-src
-          PKGS=$(find .. -maxdepth 1 -type d -name '*amneziawg*' | sed 's#^\.\./##')
-          cp -r $PKGS package/
+          mkdir -p openwrt-src/package
+          cp -r amneziawg-tools openwrt-src/package/
+          cp -r luci-proto-amneziawg openwrt-src/package/
+          cp -r kmod-amneziawg openwrt-src/package/
 
       - name: Prepare feeds
         run: |
