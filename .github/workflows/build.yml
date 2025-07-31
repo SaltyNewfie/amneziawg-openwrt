@@ -1,30 +1,35 @@
 name: Build AmneziaWG for AXT1800 Slate
 
+# trigger on any tag push (i.e. your release tags) or PRs against main
 on:
   push:
-    tags: ['v*.*.*']
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
 
 env:
   OWR_BRANCH: openwrt-23.05
-  GL_VERSION: '4.8.0'
+  GL_VERSION: 4.8.0
 
+###############################################################################
+# 1) Smoke-test overlay: clone OpenWrt, apply your overlay & quick-defconfig, #
+#    then verify your three packages show up in .config.                      #
+###############################################################################
 jobs:
-  smoke-test:
-    name: 🧪 Smoke-test overlay
-    runs-on: ubuntu-22.04
+  smoke-test-overlay:
+    name: Smoke-test overlay
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout your fork
+      - name: Checkout AmneziaWG overlay
         uses: actions/checkout@v4
+        with:
+          path: amneziawg-overlay
 
       - name: Clone OpenWrt snapshot
         run: |
-          git clone --depth 1 \
-            --branch "${OWR_BRANCH}" \
-            https://github.com/openwrt/openwrt.git openwrt-src
+          git clone --depth 1 --branch $OWR_BRANCH https://github.com/openwrt/openwrt openwrt-src
 
       - name: Copy in GL.iNet buildinfo (.config)
         run: |
@@ -32,54 +37,62 @@ jobs:
 
       - name: Overlay AmneziaWG packages
         run: |
-          # copy each package from your repo root into OpenWrt's package folder
-          mkdir -p openwrt-src/package
-          cp -r amneziawg-tools openwrt-src/package/
-          cp -r luci-proto-amneziawg openwrt-src/package/
-          cp -r kmod-amneziawg openwrt-src/package/
+          cd openwrt-src
+          cp -R ../amneziawg-overlay/amneziawg-tools     package/
+          cp -R ../amneziawg-overlay/luci-proto-amneziawg package/
+          cp -R ../amneziawg-overlay/kmod-amneziawg      package/
 
       - name: Quick defconfig for smoke
         run: |
           cd openwrt-src
-          make defconfig
+          # scripts/config is installed by default with OpenWrt tree
+          scripts/config/defconfig \
+            --enable amneziawg_tools \
+            --enable luci_proto_amneziawg \
+            --enable kmod_amneziawg
 
       - name: Verify .config contains our packages
         run: |
           cd openwrt-src
-          grep -q 'CONFIG_PACKAGE_amneziawg-tools=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-proto-amneziawg=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-amneziawg=y' .config
+          grep -q 'CONFIG_PACKAGE_amneziawg_tools=y'     .config
+          grep -q 'CONFIG_PACKAGE_luci_proto_amneziawg=y' .config
+          grep -q 'CONFIG_PACKAGE_kmod_amneziawg=y'      .config
 
-  build:
-    name: 🔨 Full build & release
-    needs: smoke-test
-    runs-on: ubuntu-22.04
+###############################################################################
+# 2) Full build & release: only runs if smoke-test-overlay succeeds.         #
+###############################################################################
+  full-build-and-release:
+    name: Full build & release
+    needs: smoke-test-overlay
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout your fork
+      - name: Checkout AmneziaWG overlay
         uses: actions/checkout@v4
+        with:
+          path: amneziawg-overlay
 
       - name: Clone OpenWrt snapshot
         run: |
-          git clone --depth 1 \
-            --branch "${OWR_BRANCH}" \
-            https://github.com/openwrt/openwrt.git openwrt-src
+          git clone --depth 1 --branch $OWR_BRANCH https://github.com/openwrt/openwrt openwrt-src
 
-      - name: Copy in GL.iNet buildinfo (.config)
+      - name: Apply GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
       - name: Bootstrap OpenWrt toolchain
         run: |
           cd openwrt-src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
           make defconfig
-          make -j"$(nproc)" toolchain/install
+          make -j$(nproc) toolchain/install
 
       - name: Overlay AmneziaWG packages
         run: |
-          mkdir -p openwrt-src/package
-          cp -r amneziawg-tools openwrt-src/package/
-          cp -r luci-proto-amneziawg openwrt-src/package/
-          cp -r kmod-amneziawg openwrt-src/package/
+          cd openwrt-src
+          cp -R ../amneziawg-overlay/amneziawg-tools     package/
+          cp -R ../amneziawg-overlay/luci-proto-amneziawg package/
+          cp -R ../amneziawg-overlay/kmod-amneziawg      package/
 
       - name: Prepare feeds
         run: |
@@ -87,23 +100,35 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Build AmneziaWG packages
+      - name: Enable AmneziaWG packages in .config
         run: |
           cd openwrt-src
-          make -j"$(nproc)" \
-            package/amneziawg-tools/compile V=s \
-            package/luci-proto-amneziawg/compile V=s \
-            package/kmod-amneziawg/compile V=s
+          cat << 'EOF' >> .config
+CONFIG_PACKAGE_amneziawg_tools=y
+CONFIG_PACKAGE_luci_proto_amneziawg=y
+CONFIG_PACKAGE_kmod_amneziawg=y
+EOF
+          make defconfig
 
-      - name: Collect artifacts
+      - name: Build only AmneziaWG packages
+        run: |
+          cd openwrt-src
+          make -j$(nproc) \
+            package/amneziawg-tools/compile \
+            package/luci-proto-amneziawg/compile \
+            package/kmod-amneziawg/compile
+
+      - name: Collect every AmneziaWG .ipk
         run: |
           cd openwrt-src
           mkdir -p awg
-          find bin -type f -name 'amneziawg-*.ipk' -exec cp {} awg/ \;
+          find bin -type f -name 'amneziawg-tools_*.ipk'     -exec cp {} awg/ \;
+          find bin -type f -name 'luci-proto-amneziawg_*.ipk' -exec cp {} awg/ \;
+          find bin -type f -name 'kmod-amneziawg_*.ipk'      -exec cp {} awg/ \;
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: "${{ github.ref_name }}"
-          name: "AmneziaWG v${{ env.GL_VERSION }} (AXT1800)"
-          files: openwrt-src/awg/*.ipk
+          tag_name: ${{ github.ref_name }}
+          name:      "AmneziaWG v${{ env.GL_VERSION }} ($OWR_BRANCH)"
+          files:     openwrt-src/awg/*.ipk
