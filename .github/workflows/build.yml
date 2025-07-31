@@ -1,6 +1,6 @@
 name: Build AmneziaWG for AXT1800 Slate
 
-# trigger on any tag push (i.e. your release tags) or PRs against main
+# Trigger on any new tag (for releases) or PRs against main
 on:
   push:
     tags:
@@ -13,11 +13,10 @@ env:
   OWR_BRANCH: openwrt-23.05
   GL_VERSION: 4.8.0
 
-###############################################################################
-# 1) Smoke-test overlay: clone OpenWrt, apply your overlay & quick-defconfig, #
-#    then verify your three packages show up in .config.                      #
-###############################################################################
 jobs:
+  ###########################################################################
+  # 1) Quick smoke-test: ensure our overlay packages get into .config        #
+  ###########################################################################
   smoke-test-overlay:
     name: Smoke-test overlay
     runs-on: ubuntu-latest
@@ -31,7 +30,7 @@ jobs:
         run: |
           git clone --depth 1 --branch $OWR_BRANCH https://github.com/openwrt/openwrt openwrt-src
 
-      - name: Copy in GL.iNet buildinfo (.config)
+      - name: Copy GL.iNet buildinfo (.config)
         run: |
           cp config_${{ env.GL_VERSION }}.buildinfo openwrt-src/.config
 
@@ -45,7 +44,6 @@ jobs:
       - name: Quick defconfig for smoke
         run: |
           cd openwrt-src
-          # scripts/config is installed by default with OpenWrt tree
           scripts/config/defconfig \
             --enable amneziawg_tools \
             --enable luci_proto_amneziawg \
@@ -58,9 +56,9 @@ jobs:
           grep -q 'CONFIG_PACKAGE_luci_proto_amneziawg=y' .config
           grep -q 'CONFIG_PACKAGE_kmod_amneziawg=y'      .config
 
-###############################################################################
-# 2) Full build & release: only runs if smoke-test-overlay succeeds.         #
-###############################################################################
+  ###########################################################################
+  # 2) Full build & release: only runs if smoke-test-overlay succeeded      #
+  ###########################################################################
   full-build-and-release:
     name: Full build & release
     needs: smoke-test-overlay
@@ -104,10 +102,10 @@ jobs:
         run: |
           cd openwrt-src
           cat << 'EOF' >> .config
-CONFIG_PACKAGE_amneziawg_tools=y
-CONFIG_PACKAGE_luci_proto_amneziawg=y
-CONFIG_PACKAGE_kmod_amneziawg=y
-EOF
+          CONFIG_PACKAGE_amneziawg_tools=y
+          CONFIG_PACKAGE_luci_proto_amneziawg=y
+          CONFIG_PACKAGE_kmod_amneziawg=y
+          EOF
           make defconfig
 
       - name: Build only AmneziaWG packages
