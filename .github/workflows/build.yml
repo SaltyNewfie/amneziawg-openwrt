@@ -14,7 +14,7 @@ env:
 
 jobs:
   smoke-test:
-    name: Smoke‐test overlay
+    name: Smoke-test overlay
     runs-on: ubuntu-latest
 
     steps:
@@ -34,10 +34,15 @@ jobs:
             [ -d "$pkg" ] && cp -R "$pkg" package/
           done
 
+      - name: Quick defconfig
+        run: |
+          cd openwrt-src
+          cp ../config_${GL_VERSION}.buildinfo .config
+          make defconfig
+
       - name: Verify overlay landed
         run: |
-          cd openwrt-src/package
-          ls -1 | grep -E '^amneziawg-tools$|^luci-proto-amneziawg$|^kmod-amneziawg$'
+          ls openwrt-src/package | grep -E '^amneziawg-tools$|^luci-proto-amneziawg$|^kmod-amneziawg$'
 
   build:
     name: Full build & release
@@ -58,16 +63,16 @@ jobs:
         run: |
           cp config_${GL_VERSION}.buildinfo openwrt-src/.config
 
-      - name: Bootstrap OpenWrt toolchain
+      - name: Bootstrap toolchain
         run: |
           cd openwrt-src
           make defconfig
           make -j"$(nproc)" toolchain/install
 
-      - name: Prepare Linux kernel headers only
+      - name: Prepare Linux kernel headers (no full compile)
         run: |
           cd openwrt-src
-          make target/linux/prepare
+          make -j"$(nproc)" target/linux/prepare
 
       - name: Overlay AmneziaWG packages
         run: |
@@ -82,7 +87,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Build only AmneziaWG packages
+      - name: Build only your packages
         run: |
           cd openwrt-src
           make -j"$(nproc)" V=s \
