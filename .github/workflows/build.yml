@@ -42,7 +42,8 @@ jobs:
 
       - name: Verify overlay landed
         run: |
-          ls openwrt-src/package | grep -E '^amneziawg-tools$|^luci-proto-amneziawg$|^kmod-amneziawg$'
+          cd openwrt-src/package
+          ls -1 | grep -E '^amneziawg-tools$|^luci-proto-amneziawg$|^kmod-amneziawg$'
 
   build:
     name: Full build & release
@@ -63,16 +64,16 @@ jobs:
         run: |
           cp config_${GL_VERSION}.buildinfo openwrt-src/.config
 
-      - name: Bootstrap toolchain
+      - name: Bootstrap OpenWrt toolchain
         run: |
           cd openwrt-src
           make defconfig
           make -j"$(nproc)" toolchain/install
 
-      - name: Prepare Linux kernel headers (no full compile)
+      - name: Prepare Linux kernel headers only
         run: |
           cd openwrt-src
-          make -j"$(nproc)" target/linux/prepare
+          make target/linux/prepare
 
       - name: Overlay AmneziaWG packages
         run: |
@@ -87,7 +88,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Build only your packages
+      - name: Build only AmneziaWG packages
         run: |
           cd openwrt-src
           make -j"$(nproc)" V=s \
@@ -101,8 +102,8 @@ jobs:
           mkdir -p awg
           find bin/packages -type f \
             \( -name 'amneziawg-tools_*.ipk' \
-            -o -name 'luci-proto-amneziawg_*.ipk' \
-            -o -name 'kmod-amneziawg_*.ipk' \) \
+             -o -name 'luci-proto-amneziawg_*.ipk' \
+             -o -name 'kmod-amneziawg_*.ipk' \) \
           -exec cp {} awg/ \;
 
       - name: Create GitHub Release
